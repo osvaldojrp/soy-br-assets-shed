@@ -20,7 +20,7 @@ geo = gpd.read_file("BR_Municipios_2019_TRASEID_simplified.shp",
 geo = (geo[['Geocod', 'geometry']]).rename(columns={'Geocod': 'origin_cod'})
 
 # supply shed area: soy assets in Brazil
-supply_shed = pd.read_csv(r"C:\Users\osvaldo_pereira\pycharm_pessoal\soy_database\soy_supply_shed_trase_2020_threshold_90%.csv",
+supply_shed = pd.read_csv("soy_supply_shed_trase_2020_threshold_95%.csv",
                           sep=";",
                           keep_default_na=True
                           )
@@ -28,7 +28,7 @@ supply_shed = supply_shed.merge(geo, on='origin_cod', how='left')
 supply_shed = gpd.GeoDataFrame(supply_shed, geometry='geometry')
 
 # risk for each asset (silo) in Brazil
-asset_risk = pd.read_csv(r"C:\Users\osvaldo_pereira\pycharm_pessoal\soy_database\soy_asset_risk_trase_2020_threshold_90%.csv",
+asset_risk = pd.read_csv("soy_asset_risk_trase_2020_threshold_95%.csv",
                          sep=";",
                          keep_default_na=True
                          )
@@ -447,4 +447,4 @@ def update_download_link(mun, company):
 
 
 if __name__ == "__main__":
-    app.run_server(debug=False, port=8050)
+    app.run_server(debug=False)
