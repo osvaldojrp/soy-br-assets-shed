@@ -132,14 +132,19 @@ app.layout = html.Div(
                 html.A(html.Button('Download CSV'), id='download-link')
             ]
         ),
-        dcc.Graph(
-            id="choropleth-graph", responsive='auto', style={
-                'height': 700,
-                'width': '100%',
-                "display": "block",
-                "margin-left": 0,
-                "margin-right": 0,
-            }
+        dcc.Loading(
+            id="loading-1",
+            children=[dcc.Graph(
+                id="choropleth-graph", responsive='auto', style={
+                    'height': 700,
+                    'width': '100%',
+                    "display": "block",
+                    "margin-left": 0,
+                    "margin-right": 0,
+                },
+                loading_state={"is_loading": True},
+            )],
+            type="circle"
         )
     ],
 )
