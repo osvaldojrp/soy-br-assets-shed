@@ -12,14 +12,15 @@ import zipfile
 app = dash.Dash(__name__)
 server = app.server
 
+
 # goejson with limits of municipalities in Brazil
-geo = gpd.read_file("eu_import_volumes_2020_soy_municipalities.geojson",
+geo = gpd.read_file("BR_Municipios_2019_TRASEID_simplified.shp",
                     keep_default_na=True,
                     )
-geo = (geo[['TRASE_ID', 'geometry']]).rename(columns={'TRASE_ID': 'origin_cod'})
+geo = (geo[['Geocod', 'geometry']]).rename(columns={'Geocod': 'origin_cod'})
 
 # supply shed area: soy assets in Brazil
-supply_shed = pd.read_csv("soy_supply_shed_trase_2020_threshold_95%.csv",
+supply_shed = pd.read_csv(r"C:\Users\osvaldo_pereira\pycharm_pessoal\soy_database\soy_supply_shed_trase_2020_threshold_90%.csv",
                           sep=";",
                           keep_default_na=True
                           )
@@ -27,7 +28,7 @@ supply_shed = supply_shed.merge(geo, on='origin_cod', how='left')
 supply_shed = gpd.GeoDataFrame(supply_shed, geometry='geometry')
 
 # risk for each asset (silo) in Brazil
-asset_risk = pd.read_csv("soy_asset_risk_trase_2020_threshold_95%.csv",
+asset_risk = pd.read_csv(r"C:\Users\osvaldo_pereira\pycharm_pessoal\soy_database\soy_asset_risk_trase_2020_threshold_90%.csv",
                          sep=";",
                          keep_default_na=True
                          )
@@ -42,7 +43,7 @@ risk_color = {
 asset_risk["marker_color"] = asset_risk["asset_risk"].map(risk_color)
 
 # state boundaries
-state = gpd.read_file("brazilian_states_IBGE_2010.geojson",
+state = gpd.read_file("estados_2010.shp",
                       keep_default_na=True,
                       )
 
@@ -103,8 +104,10 @@ app.layout = html.Div(
                         id='destination-mun-dropdown',
                         options=[{
                             'label': mun,
-                            'value': mun} for mun in supply_shed['destination_mun'].unique()],
-                        value='UBERLANDIA',  # Default municipality of destination
+                            'value': mun
+                        } for mun in supply_shed['destination_mun'].unique()],
+                        value=['UBERLANDIA'],  # Default municipalities of destination (as a list)
+                        multi=True,  # Allow multiple selections
                         placeholder='Destination Municipality',
                         style={"position": "relative", "left": "0"},
                     )], style=dict(width='50%'))
@@ -112,8 +115,12 @@ app.layout = html.Div(
                     html.Label("Destination Company", style={"fontFamily": "DM Sans Medium"}),
                     dcc.Dropdown(
                         id='destination-company-dropdown',
-                        options=[{'label': company,
-                                  'value': company} for company in supply_shed['destination_company'].unique()],
+                        options=[{
+                            'label': company,
+                            'value': company
+                        } for company in supply_shed['destination_company'].unique()],
+                        value=['all'],  # Default value to select all companies (as a list)
+                        multi=True,  # Allow multiple selections
                         placeholder='Destination Company',
                         style={"position": "relative", "right": "0"},
                     )], style=dict(width='50%')),
@@ -242,7 +249,7 @@ def create_choropleth_figure(supply_shed, asset_risk):
         lat=asset_risk["destination_lat"],
         lon=asset_risk["destination_long"],
         mode="markers",
-        marker=dict(size=9, color=asset_risk["marker_color"], line=dict(color="black", width=1)),
+        marker=dict(size=6, color=asset_risk["marker_color"], line=dict(color="black", width=0.5)),
         customdata=asset_risk[['destination_company',
                                'destination_cnpj',
                                'destination_lat',
@@ -280,30 +287,30 @@ def create_choropleth_figure(supply_shed, asset_risk):
 
     return fig
 
-
-# Add callback to update the destination-company-dropdown options and value based on the selected municipality
 @app.callback(
     [Output('destination-company-dropdown', 'options'),
      Output('destination-company-dropdown', 'value')],
     [Input('destination-mun-dropdown', 'value')]
 )
 def update_destination_company_dropdown(mun):
-    # Filter the supply_shed DataFrame based on the selected municipality
-    supply_shed_filtered = supply_shed[supply_shed['destination_mun'] == mun]
+    # Filter the supply_shed DataFrame based on the selected municipalities
+    if mun and 'all' not in mun:
+        supply_shed_filtered = supply_shed[supply_shed['destination_mun'].isin(mun)]
+    else:
+        supply_shed_filtered = supply_shed
 
     # Get the unique companies in the filtered supply_shed DataFrame
     unique_companies = supply_shed_filtered['destination_company'].unique()
 
     # Create a list of dictionaries with 'label' and 'value' keys for the dropdown options
-    options = [{'label': company, 'value': company} for company in unique_companies]
+    options = [{'label': 'All Companies', 'value': 'all'}] + [{'label': company, 'value': company} for company in unique_companies]
 
-    # Set the default value for destination-company-dropdown to all available companies
-    value = [company for company in unique_companies]
+    # Set the default value for destination-company-dropdown to ['all'] if all companies are selected, else set to []
+    value = ['all'] if len(unique_companies) > 1 else []
 
     return options, value
 
 
-# Add callback to update the choropleth map based on dropdown selections
 @app.callback(
     Output('choropleth-graph', 'figure'),
     [
@@ -312,23 +319,27 @@ def update_destination_company_dropdown(mun):
     ],
 )
 def update_choropleth_map(mun, company):
+    # Check if no municipality is selected in the "Destination Municipality" dropdown
+    if not mun:
+        mun = supply_shed['destination_mun'].unique()
+
     # Filter the supply_shed and asset_risk DataFrames based on dropdown selections
-    supply_shed_filtered = supply_shed[supply_shed['destination_mun'] == mun]
+    supply_shed_filtered = supply_shed[supply_shed['destination_mun'].isin(mun)]
 
     # Convert company to a list if it's a single value
     if isinstance(company, str):
         company = [company]
 
-    if company and company[0] != 'all':
+    if company and 'all' not in company:
         supply_shed_filtered = supply_shed_filtered[supply_shed_filtered['destination_company'].isin(company)]
 
-    asset_risk_filtered = asset_risk[asset_risk['destination_mun'] == mun]
+    asset_risk_filtered = asset_risk[asset_risk['destination_mun'].isin(mun)]
 
     # Convert company to a list if it's a single value
     if isinstance(company, str):
         company = [company]
 
-    if company and company[0] != 'all':
+    if company and 'all' not in company:
         asset_risk_filtered = asset_risk_filtered[asset_risk_filtered['destination_company'].isin(company)]
 
     # Create a new choropleth map with the filtered DataFrames
@@ -348,7 +359,7 @@ def update_choropleth_map(mun, company):
 )
 def update_download_link(mun, company):
     # Filter the supply_shed and asset_risk DataFrames based on dropdown selections
-    supply_shed_filtered = supply_shed[supply_shed['destination_mun'] == mun]
+    supply_shed_filtered = supply_shed[supply_shed['destination_mun'].isin(mun)]
     supply_shed_filtered = (supply_shed_filtered[['origin_cod',
                                                   'origin_mun',
                                                   'origin_uf',
@@ -382,14 +393,14 @@ def update_download_link(mun, company):
                  'destination_dt': 'Destination (trase branch assignment)',
                  'risk_score': 'Risk score'})
 
-    # Convert company to a list if it's a single value
-    if isinstance(company, str):
-        company = [company]
+    # Convert company to a list if 'all' is selected or multiple companies are selected
+    if 'all' in company or len(company) > 1:
+        company = supply_shed_filtered['Destination company'].unique()
 
-    if company and company[0] != 'all':
+    if 'all' not in company:
         supply_shed_filtered = supply_shed_filtered[supply_shed_filtered['Destination company'].isin(company)]
 
-    asset_risk_filtered = asset_risk[asset_risk['destination_mun'] == mun]
+    asset_risk_filtered = asset_risk[asset_risk['destination_mun'].isin(mun)]
     asset_risk_filtered = (asset_risk_filtered[['destination_cod',
                                                 'destination_mun',
                                                 'destination_state',
@@ -411,11 +422,11 @@ def update_download_link(mun, company):
                  'destination_dt': 'Related branch',
                  'asset_risk': 'Asset risk score'})
 
-    # Convert company to a list if it's a single value
-    if isinstance(company, str):
-        company = [company]
+    # Convert company to a list if 'all' is selected or multiple companies are selected
+    if 'all' in company or len(company) > 1:
+        company = asset_risk_filtered['Company name'].unique()
 
-    if company and company[0] != 'all':
+    if 'all' not in company:
         asset_risk_filtered = asset_risk_filtered[asset_risk_filtered['Company name'].isin(company)]
 
     # Create BytesIO buffer to store the ZIP file
@@ -436,4 +447,4 @@ def update_download_link(mun, company):
 
 
 if __name__ == "__main__":
-    app.run_server(debug=False)
+    app.run_server(debug=False, port=8050)
