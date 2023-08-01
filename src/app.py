@@ -20,7 +20,7 @@ geo = gpd.read_file("BR_Municipios_2019_TRASEID_simplified.shp",
 geo = (geo[['Geocod', 'geometry']]).rename(columns={'Geocod': 'origin_cod'})
 
 # supply shed area: soy assets in Brazil
-supply_shed = pd.read_csv("soy_supply_shed_trase_2020_threshold_95%.csv",
+supply_shed = pd.read_csv("risk_files/soy_supply_shed_trase_2020_threshold_90%.csv",
                           sep=";",
                           keep_default_na=True
                           )
@@ -28,7 +28,7 @@ supply_shed = supply_shed.merge(geo, on='origin_cod', how='left')
 supply_shed = gpd.GeoDataFrame(supply_shed, geometry='geometry')
 
 # risk for each asset (silo) in Brazil
-asset_risk = pd.read_csv("soy_asset_risk_trase_2020_threshold_95%.csv",
+asset_risk = pd.read_csv("risk_files/soy_asset_risk_trase_2020_threshold_90%.csv",
                          sep=";",
                          keep_default_na=True
                          )
@@ -79,12 +79,12 @@ app.layout = html.Div(
                 ),
                 html.P(
                     "Deforestation risk categorization of soy silos in Brazil for the year 2020, considering all "
-                    "silos presented in the Trase database (silos assigned to a given branch in Trase). The risk "
-                    "categorization is carried out in two steps: first, we identify municipalities more likely to "
-                    "provide production to a given silo based on transportation cost by road and branch assignment in "
-                    "Trase; secondly, we classify deforestation risk based on the risk status of each providing "
-                    "municipality and the respective soy volume produced by them. Areas 'at-risk', contribute to 95% "
-                    "of the national soy deforestation in 2020 (soy occupying areas deforested between 2015-2019). "
+                    "silos presented in the Trase database. The risk categorization is carried out in two steps: "
+                    "first, we identify municipalities more likely to provide production to a given silo based on "
+                    "transportation cost by road and branch assignment in Trase; secondly, we classify deforestation "
+                    "risk based on the risk status of each providing municipality and the respective soy volume "
+                    "produced by them. Areas 'at-risk', contribute to 99%, 95%, or 90% of the national soy "
+                    "deforestation in 2020 (soy occupying areas deforested between 2015-2019). "
                     "Click 'download' to access the original data for the selected area.",
                     className="card-description",
                     style={
@@ -96,6 +96,28 @@ app.layout = html.Div(
                 ),
             ],
         ),
+        html.Label(
+            "Select risk threshold",
+            style={
+                "fontFamily": "DM Sans Medium",
+                "fontSize": "18px",
+                "color": "#000000",
+                "marginTop": "10px",
+                "marginBottom": "5px",
+            },
+        ),
+        dcc.RadioItems(
+            id="threshold-radio",
+            options=[
+                {"label": "Threshold of 90%", "value": "90"},
+                {"label": "Threshold of 95%", "value": "95"},
+                {"label": "Threshold of 99%", "value": "99"},
+            ],
+            value="90",  # Default threshold value
+            labelStyle={"display": "inline-block"},
+            style={"padding": "10px"}
+        ),
+        html.Div(style={'height': '5px'}),
         html.Div(
             className="row", children=[
                 html.Div(className='six columns', children=[
@@ -106,7 +128,7 @@ app.layout = html.Div(
                             'label': mun,
                             'value': mun
                         } for mun in supply_shed['destination_mun'].unique()],
-                        value=['UBERLANDIA'],  # Default municipalities of destination (as a list)
+                        value=['NOVA MUTUM'],  # Default municipalities of destination (as a list)
                         multi=True,  # Allow multiple selections
                         placeholder='Destination Municipality',
                         style={"position": "relative", "left": "0"},
@@ -136,7 +158,7 @@ app.layout = html.Div(
             id="loading-1",
             children=[dcc.Graph(
                 id="choropleth-graph", responsive='auto', style={
-                    'height': 700,
+                    'height': 800,
                     'width': '100%',
                     "display": "block",
                     "margin-left": 0,
@@ -321,9 +343,30 @@ def update_destination_company_dropdown(mun):
     [
         Input('destination-mun-dropdown', 'value'),
         Input('destination-company-dropdown', 'value'),
+        Input('threshold-radio', 'value'),
     ],
 )
-def update_choropleth_map(mun, company):
+def update_choropleth_map(mun, company, threshold):
+    # Update the file paths based on the selected threshold
+    supply_shed_file = f"risk_files/soy_supply_shed_trase_2020_threshold_{threshold}%.csv"
+    asset_risk_file = f"risk_files/soy_asset_risk_trase_2020_threshold_{threshold}%.csv"
+
+    # Read the supply_shed and asset_risk DataFrames from the updated file paths
+    supply_shed = pd.read_csv(supply_shed_file, sep=";", keep_default_na=True)
+    supply_shed = supply_shed.merge(geo, on='origin_cod', how='left')
+    supply_shed = gpd.GeoDataFrame(supply_shed, geometry='geometry')
+
+    asset_risk = pd.read_csv(asset_risk_file, sep=";", keep_default_na=True)
+    asset_risk = gpd.GeoDataFrame(
+        asset_risk,
+        geometry=gpd.points_from_xy(asset_risk["destination_long"], asset_risk["destination_lat"]),
+    )
+    risk_color = {
+        "Negligible": "#BBFFEC",
+        "At-risk": "#FF6A5F",
+    }
+    asset_risk["marker_color"] = asset_risk["asset_risk"].map(risk_color)
+
     # Check if no municipality is selected in the "Destination Municipality" dropdown
     if not mun:
         mun = supply_shed['destination_mun'].unique()
